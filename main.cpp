@@ -1,12 +1,13 @@
 #include "stdafx.h"
-#include "GLFinalWork.h"
+#include "modelviewer.h"
 #include <QtWidgets/QApplication>
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 
-    GLFinalWork w;
-    w.show();
+    ModelViewer* modelViewer = new ModelViewer();
+    modelViewer->show();
+
     return a.exec();
 }

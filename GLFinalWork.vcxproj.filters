@@ -26,15 +26,6 @@
     <QtRcc Include="GLFinalWork.qrc">
       <Filter>Resource Files</Filter>
     </QtRcc>
-    <QtUic Include="GLFinalWork.ui">
-      <Filter>Form Files</Filter>
-    </QtUic>
-    <QtMoc Include="GLFinalWork.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <ClCompile Include="GLFinalWork.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <None Include="GLFinalWork.ico">
       <Filter>Resource Files</Filter>
     </None>
@@ -52,21 +43,24 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="My3DWindow.cpp">
+    <ClCompile Include="modelviewer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="utils.cpp">
+    <ClCompile Include="scene.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="My3DWindow.h">
+    <QtUic Include="modelviewer.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="modelviewer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="utils.h">
+    <QtMoc Include="scene.h">
       <Filter>Header Files</Filter>
-    </ClInclude>
+    </QtMoc>
   </ItemGroup>
 </Project>

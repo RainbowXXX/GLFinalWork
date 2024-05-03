@@ -103,18 +103,16 @@
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="utils.cpp" />
-    <ClInclude Include="utils.h" />
     <QtRcc Include="GLFinalWork.qrc" />
-    <QtUic Include="GLFinalWork.ui" />
-    <QtMoc Include="GLFinalWork.h" />
-    <ClCompile Include="GLFinalWork.cpp" />
     <ClCompile Include="main.cpp" />
     <None Include="GLFinalWork.ico" />
+    <QtUic Include="modelviewer.ui" />
     <ResourceCompile Include="GLFinalWork.rc" />
-    <QtMoc Include="My3DWindow.h" />
+    <QtMoc Include="modelviewer.h" />
+    <QtMoc Include="scene.h" />
     <ClInclude Include="stdafx.h" />
-    <ClCompile Include="My3DWindow.cpp" />
+    <ClCompile Include="modelviewer.cpp" />
+    <ClCompile Include="scene.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">Create</PrecompiledHeader>
