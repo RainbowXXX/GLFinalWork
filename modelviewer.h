@@ -14,6 +14,7 @@
 #include <QUrl>
 
 #include <QSlider>
+#include <qpushbutton.h>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -46,7 +47,8 @@ private slots:
 private:
     Ui::ModelViewer *ui;
 
-    QSlider *createSlider();
+    QSlider* createSlider();
+    QPushButton *createButton();
     Scene *scene;
 
     QString currentFile = "";

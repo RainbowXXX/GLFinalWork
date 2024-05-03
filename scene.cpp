@@ -24,12 +24,7 @@ void Scene::StartScene()
 {
     model = new Qt3DCore::QEntity(rootEntity);
 
-    Qt3DExtras::QTorusMesh *torusMesh = new Qt3DExtras::QTorusMesh(model);
-    torusMesh->setRadius(5);
-    torusMesh->setMinorRadius(1);
-    torusMesh->setRings(100);
-    torusMesh->setSlices(20);
-    model->addComponent(torusMesh);
+    curMesh = nullptr;
 
     SetupTransform();
     SetupMaterial();
@@ -51,6 +46,7 @@ void Scene::NewScene(Qt3DRender::QMesh *mesh)
 void Scene::SetupMesh(Qt3DRender::QMesh *mesh)
 {
     model->addComponent(mesh);
+    curMesh = (Qt3DRender::QMesh*)mesh;
 }
 
 void Scene::SetupTransform()
@@ -115,6 +111,47 @@ void Scene::KeyControls(QKeyEvent *event){
     }
 }
 
+void Scene::MouseControls(QMouseEvent* event, QEvent::Type eventType) {
+    switch (eventType)
+    {
+    case QEvent::Enter:
+        this->is_in_sence = true;
+        return;
+    case QEvent::Leave:
+        this->is_in_sence = false;
+        return;
+    case QEvent::MouseButtonPress:
+        this->is_in_press = true;
+        return;
+    case QEvent::MouseButtonRelease:
+        this->is_in_press = false;
+        return;
+    case QEvent::MouseMove:
+    {
+        auto cur_pos = event->pos();
+        if (this->is_in_sence and this->is_in_press) {
+            auto [cur_x, cur_y] = cur_pos;
+
+            double d_x = cur_x - last_pos.x();
+            double d_y = cur_y - last_pos.y();
+
+            d_x *= 6;
+            d_y *= 6;
+
+            qDebug() << d_x << ' ' << d_y << '\n';
+
+            transform->setRotationX(transform->rotationX() + d_x);
+            transform->setRotationY(transform->rotationY() + d_y);
+
+        }
+        this->last_pos = cur_pos;
+    }
+        return;
+    default:
+        break;
+    }
+}
+
 void Scene::LightXChanged(int angle)
 {
     light->setWorldDirection(QVector3D(angle,light->worldDirection().y(),light->worldDirection().z()));
@@ -128,4 +165,71 @@ void Scene::LightYChanged(int angle)
 void Scene::LightZChanged(int angle)
 {
     light->setWorldDirection(QVector3D(light->worldDirection().x(),light->worldDirection().y(),angle));
+}
+
+using MyMesh = OpenMesh::TriMesh_ArrayKernelT<>;
+
+void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda) {
+    size_t n = mesh.n_vertices();
+    Eigen::SparseMatrix<double> L(n, n);
+    std::vector<Eigen::Triplet<double>> triplets;
+
+    for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
+        MyMesh::VertexHandle vh = *v_it;
+        double weightSum = 0;
+        for (auto vv_it = mesh.vv_iter(vh); vv_it.is_valid(); ++vv_it) {
+            MyMesh::VertexHandle vh_adj = *vv_it;
+            double weight = 1.0;
+            triplets.push_back({ vh.idx(), vh_adj.idx(), -lambda * weight });
+            weightSum += weight;
+        }
+        triplets.push_back({ vh.idx(), vh.idx(), lambda * weightSum });
+    }
+    L.setFromTriplets(triplets.begin(), triplets.end());
+
+    for (int i = 0; i < iterations; ++i) {
+        MyMesh smoothedMesh;
+        smoothedMesh = mesh;
+        for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
+            MyMesh::VertexHandle vh = *v_it;
+            Eigen::Vector3d sum(0, 0, 0);
+            double weightSum = 0;
+            for (auto vv_it = mesh.vv_iter(vh); vv_it.is_valid(); ++vv_it) {
+                MyMesh::VertexHandle vh_adj = *vv_it;
+                auto tmp = mesh.point(vh_adj);
+                Eigen::Vector3d adj_pos{ tmp[0], tmp[1], tmp[2] };
+                sum += adj_pos;
+                weightSum += 1.0;
+            }
+            auto tmp = mesh.point(vh);
+            Eigen::Vector3d old_pos{ tmp[0], tmp[1], tmp[2] };
+            Eigen::Vector3d new_pos = (sum + weightSum * old_pos) / (weightSum + lambda);
+            smoothedMesh.set_point(vh, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
+        }
+        mesh = smoothedMesh;
+    }
+}
+
+void Scene::startTransform(bool checked)
+{
+    model->removeComponent(curMesh);
+
+    MyMesh mesh;
+    // 从文件中读取模型
+    if (!OpenMesh::IO::read_mesh(mesh, cur_source)) {
+        qDebug() << "无法读取模型文件" << '\n';
+        return;
+    }
+
+    laplacianSmoothing(mesh, 10, 0.1);
+
+    // 将结果写入文件
+    if (!OpenMesh::IO::write_mesh(mesh, cur_source+".obj")) {
+        qDebug() << "无法写入平滑后的模型文件" << '\n';
+        return;
+    }
+
+    curMesh->setSource(QUrl::fromLocalFile(QString::fromStdString(cur_source + ".obj")));
+
+    model->addComponent(curMesh);
 }

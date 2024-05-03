@@ -64,6 +64,9 @@ ModelViewer::ModelViewer(QWidget *parent) :
     QWidget *mainWidget = new QWidget();
     mainWidget->setLayout(sceneLayout);
 
+    QPushButton* actionButton = createButton();
+    connect(actionButton, &QPushButton::clicked, scene, &Scene::startTransform);
+
     QLabel *controlDescription = new QLabel();
     controlDescription->setStyleSheet("font: 12pt;");
     controlDescription->setText("File->Open File to open a 3D model file. \n"
@@ -74,6 +77,7 @@ ModelViewer::ModelViewer(QWidget *parent) :
     QVBoxLayout *topLayout = new QVBoxLayout;
     topLayout->addWidget(mainWidget);
     topLayout->addWidget(controlDescription);
+    topLayout->addWidget(actionButton);
     central->setLayout(topLayout);
 }
 
@@ -88,6 +92,13 @@ QSlider *ModelViewer::createSlider()
     return slider;
 }
 
+QPushButton* ModelViewer::createButton()
+{
+    QPushButton* button = new QPushButton();
+    button->setText("平滑");
+    return button;
+}
+
 ModelViewer::~ModelViewer()
 {
     delete ui;
@@ -95,10 +106,37 @@ ModelViewer::~ModelViewer()
 
 bool ModelViewer::eventFilter(QObject *obj, QEvent *event)
 {
-    if (event->type() == QEvent::KeyPress){
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+    switch (event->type())
+    {
+    case QEvent::KeyPress:
+    {
+        QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
         scene->KeyControls(keyEvent);
+        break;
     }
+    case QEvent::Enter:
+    case QEvent::Leave:
+    {
+        scene->MouseControls(nullptr, event->type());
+        break;
+    }
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseButtonRelease:
+    case QEvent::MouseMove:
+    {
+        QMouseEvent* mouseEvent = dynamic_cast<QMouseEvent*>(event);
+        if (mouseEvent == nullptr) {
+            qDebug() << "Problems during event type conversion." << event->type() << '\n';
+            break;
+        }
+        scene->MouseControls(mouseEvent, event->type());
+        break;
+    }
+    default:
+        qDebug() << "Unsupported events:" << event->type() << '\n';
+        break;
+    }
+
     return QObject::eventFilter(obj, event);
 }
 
@@ -115,5 +153,6 @@ void ModelViewer::on_actionOpen_File_triggered()
     QUrl data =QUrl::fromLocalFile(filename);
     mesh->setSource(data);
 
+    scene->cur_source = filename.toStdString();
     scene->NewScene(mesh);
 }
