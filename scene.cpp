@@ -176,7 +176,7 @@ double normalPDF(double x, double mean = 0.0, double stddev = 1.0) {
     return coefficient * exponent;
 }
 
-void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh, std::mutex& mutex) {
+void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh, std::mutex& mutex, std::vector<std::vector<int>>& E) {
     for (int i = begin; i < end; i++) {
         double totalWeight = lambda;
         MyMesh::VertexHandle vh = mesh.vertex_handle(i);
@@ -210,7 +210,7 @@ void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh,
     }
 }
 
-void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda) {
+void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda, int max_thread = 100) {
     size_t n = mesh.n_vertices();
     std::vector<std::vector<int>> E(n);
 
@@ -223,41 +223,18 @@ void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda) {
     }
     std::mutex mutex{};
 
-    while ( iterations-- ) {
+    while (iterations--) {
         MyMesh smoothedMesh = mesh;
-        //int block_size = (n + 19) / 20, block_num = (n + block_size - 1) / block_size;
-        //std::vector<std::thread> thread_pool;
-        //for (int i = 0; i < block_num; i++) {
-        //    int begin = i * block_size;
-        //    int end = (i + 1) * block_size;
-        //    end = std::min(end, (int)n);
-        //    thread_pool.emplace_back(work, begin, end, lambda, mesh, smoothedMesh, mutex);
-        //}
-        for (int i = 0; i < n; i++) {
-            double totalWeight = lambda;
-            MyMesh::VertexHandle vh = mesh.vertex_handle(i);
-            OpenMesh::DefaultTraits::Point origin_tmp = mesh.point(vh);
-            Eigen::Vector3d sum(0, 0, 0), origin{ origin_tmp[0], origin_tmp[1], origin_tmp[2] };
-
-            for (auto i : E[vh.idx()]) {
-                MyMesh::VertexHandle vh_to = mesh.vertex_handle(i);
-
-                auto temp = mesh.point(vh_to);
-                Eigen::Vector3d tmp{ temp[0], temp[1], temp[2] };
-
-                double weight = 1;
-
-                totalWeight += weight;
-
-                sum += weight * tmp;
-            }
-
-            auto temp = mesh.point(vh);
-            sum += lambda * Eigen::Vector3d{ temp[0], temp[1], temp[2] };
-
-            Eigen::Vector3d new_pos = sum / totalWeight;
-            MyMesh::VertexHandle vh_from = smoothedMesh.vertex_handle(vh.idx());
-            smoothedMesh.set_point(vh_from, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
+        int block_size = (n + max_thread - 1) / max_thread, block_num = (n + block_size - 1) / block_size;
+        std::vector<std::thread> thread_pool;
+        for (int i = 0; i < block_num; i++) {
+            int begin = i * block_size;
+            int end = (i + 1) * block_size;
+            end = std::min(end, (int)n);
+            thread_pool.emplace_back(work, begin, end, lambda, std::ref(mesh), std::ref(smoothedMesh), std::ref(mutex), std::ref(E));
+        }
+        for (int i = 0; i < block_num; i++) {
+            thread_pool[i].join();
         }
         mesh = smoothedMesh;
     }
