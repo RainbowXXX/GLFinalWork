@@ -169,42 +169,95 @@ void Scene::LightZChanged(int angle)
 
 using MyMesh = OpenMesh::TriMesh_ArrayKernelT<>;
 
+// 正态分布的概率密度函数
+double normalPDF(double x, double mean = 0.0, double stddev = 1.0) {
+    double coefficient = 1.0 / (stddev * sqrt(2 * M_PI));
+    double exponent = exp(-0.5 * pow((x - mean) / stddev, 2));
+    return coefficient * exponent;
+}
+
+void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh, std::mutex& mutex) {
+    for (int i = begin; i < end; i++) {
+        double totalWeight = lambda;
+        MyMesh::VertexHandle vh = mesh.vertex_handle(i);
+        OpenMesh::DefaultTraits::Point origin_tmp = mesh.point(vh);
+        Eigen::Vector3d sum(0, 0, 0), origin{ origin_tmp[0], origin_tmp[1], origin_tmp[2] };
+
+        for (auto i : E[vh.idx()]) {
+            MyMesh::VertexHandle vh_to = mesh.vertex_handle(i);
+
+            auto temp = mesh.point(vh_to);
+            Eigen::Vector3d tmp{ temp[0], temp[1], temp[2] };
+
+            double weight = 1;
+
+            totalWeight += weight;
+
+            sum += weight * tmp;
+        }
+
+        auto temp = mesh.point(vh);
+        sum += lambda * Eigen::Vector3d{ temp[0], temp[1], temp[2] };
+
+        Eigen::Vector3d new_pos = sum / totalWeight;
+
+        {
+            mutex.lock();
+            MyMesh::VertexHandle vh_from = smoothedMesh.vertex_handle(vh.idx());
+            smoothedMesh.set_point(vh_from, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
+            mutex.unlock();
+        }
+    }
+}
+
 void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda) {
     size_t n = mesh.n_vertices();
-    Eigen::SparseMatrix<double> L(n, n);
-    std::vector<Eigen::Triplet<double>> triplets;
+    std::vector<std::vector<int>> E(n);
 
     for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
         MyMesh::VertexHandle vh = *v_it;
-        double weightSum = 0;
         for (auto vv_it = mesh.vv_iter(vh); vv_it.is_valid(); ++vv_it) {
-            MyMesh::VertexHandle vh_adj = *vv_it;
-            double weight = 1.0;
-            triplets.push_back({ vh.idx(), vh_adj.idx(), -lambda * weight });
-            weightSum += weight;
+            MyMesh::VertexHandle vh_to = *vv_it;
+            E[vh.idx()].emplace_back(vh_to.idx());
         }
-        triplets.push_back({ vh.idx(), vh.idx(), lambda * weightSum });
     }
-    L.setFromTriplets(triplets.begin(), triplets.end());
+    std::mutex mutex{};
 
-    for (int i = 0; i < iterations; ++i) {
-        MyMesh smoothedMesh;
-        smoothedMesh = mesh;
-        for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
-            MyMesh::VertexHandle vh = *v_it;
-            Eigen::Vector3d sum(0, 0, 0);
-            double weightSum = 0;
-            for (auto vv_it = mesh.vv_iter(vh); vv_it.is_valid(); ++vv_it) {
-                MyMesh::VertexHandle vh_adj = *vv_it;
-                auto tmp = mesh.point(vh_adj);
-                Eigen::Vector3d adj_pos{ tmp[0], tmp[1], tmp[2] };
-                sum += adj_pos;
-                weightSum += 1.0;
+    while ( iterations-- ) {
+        MyMesh smoothedMesh = mesh;
+        //int block_size = (n + 19) / 20, block_num = (n + block_size - 1) / block_size;
+        //std::vector<std::thread> thread_pool;
+        //for (int i = 0; i < block_num; i++) {
+        //    int begin = i * block_size;
+        //    int end = (i + 1) * block_size;
+        //    end = std::min(end, (int)n);
+        //    thread_pool.emplace_back(work, begin, end, lambda, mesh, smoothedMesh, mutex);
+        //}
+        for (int i = 0; i < n; i++) {
+            double totalWeight = lambda;
+            MyMesh::VertexHandle vh = mesh.vertex_handle(i);
+            OpenMesh::DefaultTraits::Point origin_tmp = mesh.point(vh);
+            Eigen::Vector3d sum(0, 0, 0), origin{ origin_tmp[0], origin_tmp[1], origin_tmp[2] };
+
+            for (auto i : E[vh.idx()]) {
+                MyMesh::VertexHandle vh_to = mesh.vertex_handle(i);
+
+                auto temp = mesh.point(vh_to);
+                Eigen::Vector3d tmp{ temp[0], temp[1], temp[2] };
+
+                double weight = 1;
+
+                totalWeight += weight;
+
+                sum += weight * tmp;
             }
-            auto tmp = mesh.point(vh);
-            Eigen::Vector3d old_pos{ tmp[0], tmp[1], tmp[2] };
-            Eigen::Vector3d new_pos = (sum + weightSum * old_pos) / (weightSum + lambda);
-            smoothedMesh.set_point(vh, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
+
+            auto temp = mesh.point(vh);
+            sum += lambda * Eigen::Vector3d{ temp[0], temp[1], temp[2] };
+
+            Eigen::Vector3d new_pos = sum / totalWeight;
+            MyMesh::VertexHandle vh_from = smoothedMesh.vertex_handle(vh.idx());
+            smoothedMesh.set_point(vh_from, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
         }
         mesh = smoothedMesh;
     }
@@ -221,7 +274,7 @@ void Scene::startTransform(bool checked)
         return;
     }
 
-    laplacianSmoothing(mesh, 10, 0.1);
+    laplacianSmoothing(mesh, 3, 0.1);
 
     // 将结果写入文件
     if (!OpenMesh::IO::write_mesh(mesh, cur_source+".obj")) {

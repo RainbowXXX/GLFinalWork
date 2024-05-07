@@ -28,6 +28,8 @@
 #include <OpenMesh/Tools/Smoother/LaplaceSmootherT.hh>
 #include <OpenMesh/Tools/Smoother/JacobiLaplaceSmootherT.hh>
 
+#include <mutex>
+
 class Scene : public QObject
 {
     Q_OBJECT
