@@ -32,10 +32,31 @@ void Scene::StartScene()
 
 }
 
-void Scene::NewScene(Qt3DRender::QMesh *mesh)
+void laplacianSmoothing(std::vector<MyMesh>& table, int iterations, double lambda, int max_thread = 100);
+
+void Scene::NewScene()
 {
+    {
+        MyMesh mesh;
+        // 从文件中读取模型
+        if (!OpenMesh::IO::read_mesh(mesh, cur_source)) {
+            qDebug() << "无法读取模型文件" << '\n';
+            return;
+        }
+        scale(mesh);
+        // 将结果写入文件
+        if (!OpenMesh::IO::write_mesh(mesh, cur_source + ".obj")) {
+            qDebug() << "无法写入平滑后的模型文件" << '\n';
+            return;
+        }
+    }
+
     delete model;
     model = new Qt3DCore::QEntity(rootEntity);
+
+    Qt3DRender::QMesh* mesh = new Qt3DRender::QMesh();
+    QUrl data = QUrl::fromLocalFile(QString::fromStdString(cur_source + ".obj"));
+    mesh->setSource(data);
 
     SetupMesh(mesh);
     SetupTransform();
@@ -167,12 +188,10 @@ void Scene::LightZChanged(int angle)
     light->setWorldDirection(QVector3D(light->worldDirection().x(),light->worldDirection().y(),angle));
 }
 
-using MyMesh = OpenMesh::TriMesh_ArrayKernelT<>;
-
 // 正态分布的概率密度函数
 double normalPDF(double x, double mean = 0.0, double stddev = 1.0) {
-    double coefficient = 1.0 / (stddev * sqrt(2 * M_PI));
-    double exponent = exp(-0.5 * pow((x - mean) / stddev, 2));
+    double coefficient = 1.0 / (stddev * std::sqrt(2 * M_PI));
+    double exponent = std::exp(-0.5 * std::pow((x - mean) / stddev, 2));
     return coefficient * exponent;
 }
 
@@ -183,20 +202,20 @@ void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh,
         OpenMesh::DefaultTraits::Point origin_tmp = mesh.point(vh);
         Eigen::Vector3d sum(0, 0, 0), origin{ origin_tmp[0], origin_tmp[1], origin_tmp[2] };
 
-        double weight = (1 - lambda) / static_cast<double>(E[vh.idx()].size());
-        for (auto j : E[vh.idx()]) {
+        double totalWeight = lambda + E[vh.idx()].size();
+        for (auto j : E[i]) {
             MyMesh::VertexHandle vh_to = mesh.vertex_handle(j);
 
             auto temp = mesh.point(vh_to);
             Eigen::Vector3d tmp{ temp[0], temp[1], temp[2] };
 
-            sum += weight * tmp;
+            sum += tmp;
         }
 
         auto temp = mesh.point(vh);
         sum += lambda * Eigen::Vector3d{ temp[0], temp[1], temp[2] };
 
-        Eigen::Vector3d new_pos = sum;
+        Eigen::Vector3d new_pos = sum / totalWeight;
 
         {
             //mutex.lock();
@@ -207,7 +226,70 @@ void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh,
     }
 }
 
-void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda, int max_thread = 100) {
+void remesh(
+    MyMesh& mesh,
+    std::vector<std::vector<int>>& E,
+    double eps = 1e-4) {
+
+    size_t sub_face = 0;
+    for (auto face : mesh.all_faces()) {
+        if (mesh.calc_face_area(face) < eps) sub_face++;
+    }
+    if (sub_face < 0.1 * mesh.n_faces()) return;
+
+    OpenMesh::Decimater::DecimaterT<MyMesh> decimater(mesh);
+    OpenMesh::Decimater::ModQuadricT<MyMesh>::Handle hModQuadric;
+    decimater.add(hModQuadric);
+
+    decimater.initialize();
+
+    decimater.decimate_to_faces(0, mesh.n_faces() - sub_face);
+
+    // Remove the deleted faces and vertices
+    mesh.garbage_collection();
+
+    E.resize(mesh.n_vertices(), std::vector<int>{});
+    for (auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
+        MyMesh::VertexHandle vh = *v_it;
+        for (auto vv_it = mesh.vv_iter(vh); vv_it.is_valid(); ++vv_it) {
+            MyMesh::VertexHandle vh_to = *vv_it;
+            E[vh.idx()].emplace_back(vh_to.idx());
+        }
+    }
+
+}
+
+void Scene::scale(MyMesh& mesh) {
+    // 2. 计算模型的中心位置
+    MyMesh::Point center(0.0, 0.0, 0.0);
+    for (const auto& v : mesh.vertices()) {
+        center += mesh.point(v);
+    }
+    center /= mesh.n_vertices();
+
+    // 3. 将模型平移到中心位置
+    for (auto& v : mesh.vertices()) {
+        mesh.set_point(v, mesh.point(v) - center);
+    }
+
+    // 4. 计算模型的包围盒大小（或其他尺寸指标），这里使用包围盒的对角线长度作为参考
+    float diagonal_length = 0.0f;
+    for (const auto& v : mesh.vertices()) {
+        float distance = (mesh.point(v) - MyMesh::Point(0.0, 0.0, 0.0)).length();
+        if (distance > diagonal_length) {
+            diagonal_length = distance;
+        }
+    }
+
+    // 5. 缩放模型，使其大小适合所需的距离
+    float target_distance = 10.0f; // 目标距离
+    float scale_factor = target_distance / diagonal_length;
+    for (auto& v : mesh.vertices()) {
+        mesh.set_point(v, mesh.point(v) * scale_factor);
+    }
+}
+
+void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda, int max_thread) {
     size_t n = mesh.n_vertices();
     std::vector<std::vector<int>> E(n);
 
@@ -232,32 +314,46 @@ void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda, int max_thr
                 thread_pool.emplace_back(work, begin, end, lambda, std::ref(mesh), std::ref(smoothedMesh), std::ref(mutex), std::ref(E));
             }
         }
-        mesh = smoothedMesh;
+        mesh = std::move(smoothedMesh);
+        remesh(mesh, E, 1e-7);
+        n = mesh.n_vertices();
     }
+}
+
+void Scene::setLambda(double new_val) {
+    lambda = new_val;
+}
+void Scene::setIters(int new_val) {
+    iters = new_val;
+}
+void Scene::setMaxThreads(int new_val) {
+    max_threads = new_val;
 }
 
 void Scene::startTransform(bool checked)
 {
-    model->removeComponent(curMesh);
+    auto _thread = [&]() {
+        MyMesh mesh;
+        // 从文件中读取模型
+        model->removeComponent(curMesh);
+        if (!OpenMesh::IO::read_mesh(mesh, cur_source)) {
+            qDebug() << "无法读取模型文件" << '\n';
+            return;
+        }
+        laplacianSmoothing(mesh, iters, lambda, max_threads);
+        scale(mesh);
+        // 将结果写入文件
+        if (!OpenMesh::IO::write_mesh(mesh, cur_source + ".obj")) {
+            qDebug() << "无法写入平滑后的模型文件" << '\n';
+            return;
+        }
 
-    MyMesh mesh;
-    // 从文件中读取模型
-    if (!OpenMesh::IO::read_mesh(mesh, cur_source)) {
-        qDebug() << "无法读取模型文件" << '\n';
-        return;
-    }
+        curMesh->setSource(QUrl::fromLocalFile(QString::fromStdString(cur_source + ".obj1")));
+        curMesh->setSource(QUrl::fromLocalFile(QString::fromStdString(cur_source + ".obj")));
 
-    laplacianSmoothing(mesh, 20, 0);
+        //cur_source = cur_source + ".obj";
 
-    // 将结果写入文件
-    if (!OpenMesh::IO::write_mesh(mesh, cur_source+".obj")) {
-        qDebug() << "无法写入平滑后的模型文件" << '\n';
-        return;
-    }
-
-    curMesh->setSource(QUrl::fromLocalFile(QString::fromStdString(cur_source + ".obj")));
-
-    cur_source = cur_source + ".obj";
-
-    model->addComponent(curMesh);
+        model->addComponent(curMesh);
+        };
+    std::thread{ _thread }.detach();
 }

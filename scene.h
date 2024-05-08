@@ -28,16 +28,27 @@
 #include <OpenMesh/Tools/Smoother/LaplaceSmootherT.hh>
 #include <OpenMesh/Tools/Smoother/JacobiLaplaceSmootherT.hh>
 
+#include <OpenMesh/Tools/Decimater/DecimaterT.hh>
+#include <OpenMesh/Tools/Decimater/ModQuadricT.hh>
+
 #include <mutex>
+#include <cmath>
+#include <set>
+#include <unordered_set>
+
+using MyMesh = OpenMesh::TriMesh_ArrayKernelT<>;
 
 class Scene : public QObject
 {
     Q_OBJECT
 public:
+    void setLambda(double new_val);
+    void setIters(int new_val);
+    void setMaxThreads(int new_val);
     explicit Scene(Qt3DExtras::Qt3DWindow *, QObject *parent=nullptr);
 
     std::string cur_source;
-    void NewScene(Qt3DRender::QMesh *);
+    void NewScene();
     void KeyControls(QKeyEvent* event);
     void MouseControls(QMouseEvent* event, QEvent::Type eventType);
 
@@ -68,4 +79,9 @@ private:
     void SetupTransform();
     void SetupMaterial();
     void SetupLighting();
+
+    void scale(MyMesh& mesh);
+
+    double lambda;
+    int iters, max_threads;
 };
