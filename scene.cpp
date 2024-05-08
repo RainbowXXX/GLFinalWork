@@ -177,21 +177,18 @@ double normalPDF(double x, double mean = 0.0, double stddev = 1.0) {
 }
 
 void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh, std::mutex& mutex, std::vector<std::vector<int>>& E) {
+
     for (int i = begin; i < end; i++) {
-        double totalWeight = lambda;
         MyMesh::VertexHandle vh = mesh.vertex_handle(i);
         OpenMesh::DefaultTraits::Point origin_tmp = mesh.point(vh);
         Eigen::Vector3d sum(0, 0, 0), origin{ origin_tmp[0], origin_tmp[1], origin_tmp[2] };
 
-        for (auto i : E[vh.idx()]) {
-            MyMesh::VertexHandle vh_to = mesh.vertex_handle(i);
+        double weight = (1 - lambda) / static_cast<double>(E[vh.idx()].size());
+        for (auto j : E[vh.idx()]) {
+            MyMesh::VertexHandle vh_to = mesh.vertex_handle(j);
 
             auto temp = mesh.point(vh_to);
             Eigen::Vector3d tmp{ temp[0], temp[1], temp[2] };
-
-            double weight = 1;
-
-            totalWeight += weight;
 
             sum += weight * tmp;
         }
@@ -199,13 +196,13 @@ void work(int begin, int end, double lambda, MyMesh& mesh, MyMesh& smoothedMesh,
         auto temp = mesh.point(vh);
         sum += lambda * Eigen::Vector3d{ temp[0], temp[1], temp[2] };
 
-        Eigen::Vector3d new_pos = sum / totalWeight;
+        Eigen::Vector3d new_pos = sum;
 
         {
-            mutex.lock();
+            //mutex.lock();
             MyMesh::VertexHandle vh_from = smoothedMesh.vertex_handle(vh.idx());
             smoothedMesh.set_point(vh_from, MyMesh::Point(new_pos[0], new_pos[1], new_pos[2]));
-            mutex.unlock();
+            //mutex.unlock();
         }
     }
 }
@@ -226,15 +223,14 @@ void laplacianSmoothing(MyMesh& mesh, int iterations, double lambda, int max_thr
     while (iterations--) {
         MyMesh smoothedMesh = mesh;
         int block_size = (n + max_thread - 1) / max_thread, block_num = (n + block_size - 1) / block_size;
-        std::vector<std::thread> thread_pool;
-        for (int i = 0; i < block_num; i++) {
-            int begin = i * block_size;
-            int end = (i + 1) * block_size;
-            end = std::min(end, (int)n);
-            thread_pool.emplace_back(work, begin, end, lambda, std::ref(mesh), std::ref(smoothedMesh), std::ref(mutex), std::ref(E));
-        }
-        for (int i = 0; i < block_num; i++) {
-            thread_pool[i].join();
+        {
+            std::vector<std::jthread> thread_pool;
+            for (int i = 0; i < block_num; i++) {
+                int begin = i * block_size;
+                int end = (i + 1) * block_size;
+                end = std::min(end, (int)n);
+                thread_pool.emplace_back(work, begin, end, lambda, std::ref(mesh), std::ref(smoothedMesh), std::ref(mutex), std::ref(E));
+            }
         }
         mesh = smoothedMesh;
     }
@@ -251,7 +247,7 @@ void Scene::startTransform(bool checked)
         return;
     }
 
-    laplacianSmoothing(mesh, 3, 0.1);
+    laplacianSmoothing(mesh, 20, 0);
 
     // 将结果写入文件
     if (!OpenMesh::IO::write_mesh(mesh, cur_source+".obj")) {
@@ -260,6 +256,8 @@ void Scene::startTransform(bool checked)
     }
 
     curMesh->setSource(QUrl::fromLocalFile(QString::fromStdString(cur_source + ".obj")));
+
+    cur_source = cur_source + ".obj";
 
     model->addComponent(curMesh);
 }
