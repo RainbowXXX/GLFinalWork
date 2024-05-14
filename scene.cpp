@@ -6,7 +6,7 @@ Scene::Scene(Qt3DExtras::Qt3DWindow *view, QObject *parent) : QObject (parent)
 {
     rootEntity = new Qt3DCore::QEntity();
     view->setRootEntity(rootEntity);
-    view->defaultFrameGraph()->setClearColor(QColor(QRgb(0x42f4bc)));
+    view->defaultFrameGraph()->setClearColor(QColor(QRgb(0x1f1f1f)));
     Camera(view);
     StartScene();
 
@@ -260,19 +260,16 @@ void remesh(
 }
 
 void Scene::scale(MyMesh& mesh) {
-    // 2. 计算模型的中心位置
     MyMesh::Point center(0.0, 0.0, 0.0);
     for (const auto& v : mesh.vertices()) {
         center += mesh.point(v);
     }
     center /= mesh.n_vertices();
 
-    // 3. 将模型平移到中心位置
     for (auto& v : mesh.vertices()) {
         mesh.set_point(v, mesh.point(v) - center);
     }
 
-    // 4. 计算模型的包围盒大小（或其他尺寸指标），这里使用包围盒的对角线长度作为参考
     float diagonal_length = 0.0f;
     for (const auto& v : mesh.vertices()) {
         float distance = (mesh.point(v) - MyMesh::Point(0.0, 0.0, 0.0)).length();
@@ -281,8 +278,7 @@ void Scene::scale(MyMesh& mesh) {
         }
     }
 
-    // 5. 缩放模型，使其大小适合所需的距离
-    float target_distance = 10.0f; // 目标距离
+    float target_distance = 10.0f;
     float scale_factor = target_distance / diagonal_length;
     for (auto& v : mesh.vertices()) {
         mesh.set_point(v, mesh.point(v) * scale_factor);

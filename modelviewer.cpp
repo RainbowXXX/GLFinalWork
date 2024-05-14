@@ -81,14 +81,6 @@ ModelViewer::ModelViewer(QWidget* parent) :
     connect(iterations, &QLineEdit::textChanged, this, &ModelViewer::check_text_int);
     connect(max_thread, &QLineEdit::textChanged, this, &ModelViewer::check_text_int);
 
-    //QLabel *controlDescription = new QLabel();
-    //controlDescription->setStyleSheet("font: 12pt;");
-    //controlDescription->setText("File->Open File to open a 3D model file. \n"
-    //                            "Use arrows to move model. \n"
-    //                            "Use shift + arrows to zoom model. \n"
-    //                            "Use ctrl + arrows to rotate model. \n"
-    //                            "Use sliders to change lighting direction.");
-
     QLabel* iterations_label = new QLabel(), * lambda_label = new QLabel(), * max_thread_label = new QLabel();
     QHBoxLayout* iterations_box = new QHBoxLayout(), * lambda_box = new QHBoxLayout(), * max_thread_box = new QHBoxLayout();
 
@@ -106,10 +98,6 @@ ModelViewer::ModelViewer(QWidget* parent) :
 
     QVBoxLayout *topLayout = new QVBoxLayout;
     topLayout->addWidget(mainWidget);
-    //topLayout->addWidget(controlDescription);
-    //topLayout->addWidget(iterations);
-    //topLayout->addWidget(lambda);
-    //topLayout->addWidget(max_thread);
 
     topLayout->addLayout(iterations_box);
     topLayout->addLayout(lambda_box);
